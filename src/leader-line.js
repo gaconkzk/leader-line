@@ -3674,11 +3674,13 @@
       },
 
       getBBoxNest: function(attachProps, props) {
-        var bBox = getBBoxNest(attachProps.element, props.baseWindow),
-          width = bBox.width, height = bBox.height;
-        bBox.width = bBox.height = 0;
-        bBox.left = bBox.right = bBox.left + attachProps.x[0] * (attachProps.x[1] ? width : 1);
-        bBox.top = bBox.bottom = bBox.top + attachProps.y[0] * (attachProps.y[1] ? height : 1);
+        var bBox = getBBoxNest(attachProps.element, props.baseWindow);
+        if (bBox) {
+          var width = bBox.width, height = bBox.height;
+          bBox.width = bBox.height = 0;
+          bBox.left = bBox.right = bBox.left + attachProps.x[0] * (attachProps.x[1] ? width : 1);
+          bBox.top = bBox.bottom = bBox.top + attachProps.y[0] * (attachProps.y[1] ? height : 1);
+        }
         return bBox;
       },
 
