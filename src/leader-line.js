@@ -351,6 +351,50 @@
   window.isElement = isElement; // [DEBUG/]
 
   /**
+   * Get an element's bounding-box that contains coordinates relative to another element, document, or window.
+   * @param {Element} element - Target element.
+   * @param {Element} parentElement - Parent element.
+   * @returns {(BBox|null)} A bounding-box or null when failed.
+   */
+  function getBBoxRel(element, parentElement) {
+    if (parentElement) {
+      var bBox = {};
+      var el = element;
+      var rect, parentRect;
+      var prop;
+
+       rect = element.getBoundingClientRect();
+      for (prop in rect) { bBox[prop] = rect[prop]; } // eslint-disable-line guard-for-in
+
+       parentRect = parentElement.getBoundingClientRect();
+      bBox.left -= parentRect.left;
+      bBox.top -= parentRect.top;
+      bBox.right -= parentRect.left;
+      bBox.bottom -= parentRect.top;
+
+       return bBox;
+    }
+    else {
+      return getBBox(element);
+    }
+  }
+
+   /**
+   * Get an element's bounding-box that contains coordinates relative to document of specified window.
+   * @param {Element} element - Target element.
+   * @param {props} props - `props` of `LeaderLine` instance.
+   * @returns {(BBox|null)} A bounding-box or null when failed.
+   */
+  function getBBoxNestProps(element, props) {
+    if (!props.parentElement) {
+      return getBBoxNest(element, props.baseWindow);
+    }
+    else {
+      return getBBoxRel(element, props.parentElement);
+    }
+  }
+
+  /**
    * Get an element's bounding-box that contains coordinates relative to the element's document or window.
    * @param {Element} element - Target element.
    * @param {boolean} [relWindow] - Whether it's relative to the element's window, or document (i.e. `<html>`).
@@ -902,11 +946,15 @@
     return bodyOffset;
   }
 
-  function setupWindow(window) {
+  function setupWindow(window, props) {
     var baseDocument = window.document, defsSvg;
     if (!baseDocument.getElementById(DEFS_ID)) { // Add svg defs
       defsSvg = (new window.DOMParser()).parseFromString(DEFS_HTML, 'image/svg+xml');
-      baseDocument.body.appendChild(defsSvg.documentElement);
+      if (props && !!props.parentElement) {
+        props.parentElement.appendChild(defsSvg.documentElement)
+      } else {
+        baseDocument.body.appendChild(defsSvg.documentElement);
+      }
       pathDataPolyfill(window);
     }
   }
@@ -963,10 +1011,14 @@
     });
 
     if (props.baseWindow && props.svg) {
-      props.baseWindow.document.body.removeChild(props.svg);
+      if (props.parentElement) {
+        props.parentElement.removeChild(props.svg);
+      } else {
+        props.baseWindow.document.body.removeChild(props.svg);
+      }
     }
     props.baseWindow = newWindow;
-    setupWindow(newWindow);
+    setupWindow(newWindow, props);
     props.bodyOffset = getBodyOffset(newWindow); // Get `bodyOffset`
 
     // Main SVG
@@ -1110,7 +1162,11 @@
       svg.style.visibility = 'hidden';
     }
 
-    baseDocument.body.appendChild(svg);
+    if (!!props.parentElement) {
+      props.parentElement.appendChild(svg);
+    } else {
+      baseDocument.body.appendChild(svg);
+    }
 
     // label (after appendChild(svg), bBox is used)
     [0, 1, 2].forEach(function(i) {
@@ -1528,7 +1584,7 @@
           attachProps.conf.getStrokeWidth(attachProps, props) : 0,
         anchorBBox = isAttach !== false && attachProps.conf.getBBoxNest ?
           attachProps.conf.getBBoxNest(attachProps, props, strokeWidth) :
-          getBBoxNest(anchor, props.baseWindow);
+          getBBoxNestProps(anchor, props);
 
       curStats.capsMaskAnchor_pathDataSE[i] = isAttach !== false && attachProps.conf.getPathData ?
         attachProps.conf.getPathData(attachProps, props, strokeWidth) : bBox2PathData(anchorBBox);
@@ -2567,6 +2623,10 @@
     }
 
     newOptions = newOptions || {};
+    if (newOptions['rootElement']) {
+      window.leaderLineRootElement = window.document.getElementById(newOptions['rootElement']);
+      props.parentElement = window.leaderLineRootElement;
+    }
 
     // anchorSE
     ['start', 'end'].forEach(function(optionName, i) {
@@ -3385,6 +3445,7 @@
       if (start) { options.start = start; }
       if (end) { options.end = end; }
     }
+
     props.isShown = props.aplStats.show_on = !options.hide; // isShown is applied in setOptions -> bindWindow
     this.setOptions(options);
   }
@@ -3407,7 +3468,8 @@
           ['outlineColor', 'lineOutlineColor'], ['outlineSize', 'lineOutlineSize'],
         ['startPlugOutline', 'plugOutlineEnabledSE', 0], ['endPlugOutline', 'plugOutlineEnabledSE', 1],
           ['startPlugOutlineColor', 'plugOutlineColorSE', 0], ['endPlugOutlineColor', 'plugOutlineColorSE', 1],
-          ['startPlugOutlineSize', 'plugOutlineSizeSE', 0], ['endPlugOutlineSize', 'plugOutlineSizeSE', 1]]
+          ['startPlugOutlineSize', 'plugOutlineSizeSE', 0], ['endPlugOutlineSize', 'plugOutlineSizeSE', 1],
+        ['rootElement', 'rootElement']]
       .forEach(function(conf) {
         var propName = conf[0], optionName = conf[1], i = conf[2];
         Object.defineProperty(LeaderLine.prototype, propName, {
@@ -3517,7 +3579,11 @@
     props.attachments.slice().forEach(function(attachProps) { unbindAttachment(props, attachProps); });
 
     if (props.baseWindow && props.svg) {
-      props.baseWindow.document.body.removeChild(props.svg);
+      if (props.parentElement) {
+        props.parentElement.removeChild(props.svg);
+      } else {
+        props.baseWindow.document.body.removeChild(props.svg);
+      }
     }
     delete insProps[this._id];
   };
@@ -3674,7 +3740,7 @@
       },
 
       getBBoxNest: function(attachProps, props) {
-        var bBox = getBBoxNest(attachProps.element, props.baseWindow);
+        var bBox = getBBoxNestProps(attachProps.element, props);
         if (bBox) {
           var width = bBox.width, height = bBox.height;
           bBox.width = bBox.height = 0;
@@ -3775,8 +3841,14 @@
         attachProps.path.style.fill = attachProps.fill || 'none';
         attachProps.isShown = false;
         svg.style.visibility = 'hidden';
-        baseDocument.body.appendChild(svg);
-        setupWindow((window = baseDocument.defaultView));
+
+        if (attachProps.parentElement) {
+          attachProps.parentElement.appendChild(svg);
+        } else {
+          baseDocument.body.appendChild(svg);
+        }
+
+        setupWindow((window = baseDocument.defaultView), attachProps);
         attachProps.bodyOffset = getBodyOffset(window); // Get `bodyOffset`
 
         // event handler for this instance
@@ -3871,7 +3943,7 @@
       },
 
       getPathData: function(attachProps, props) {
-        var bBox = getBBoxNest(attachProps.element, props.baseWindow);
+        var bBox = getBBoxNestProps(attachProps.element, props);
         return pathList2PathData(attachProps.curStats.pathListRel, function(point) {
           point.x += bBox.left;
           point.y += bBox.top;
@@ -3879,7 +3951,7 @@
       },
 
       getBBoxNest: function(attachProps, props) {
-        var bBox = getBBoxNest(attachProps.element, props.baseWindow),
+        var bBox = getBBoxNestProps(attachProps.element, props),
           bBoxRel = attachProps.curStats.bBoxRel;
         return {
           left: bBoxRel.left + bBox.left,
@@ -4366,7 +4438,7 @@
       },
 
       getBBoxNest: function(attachProps, props) {
-        return getBBoxNest(attachProps.element, props.baseWindow);
+        return getBBoxNestProps(attachProps.element, props);
       },
 
       // show/hide immediately
